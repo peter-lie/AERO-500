@@ -61,10 +61,6 @@ for i in range(3):
     value, weight, combo = best_solutions[i]
     print(f"Solution {i+1}: Value = {value}, Weight = {weight}, Items = {combo}")
 
-# Seems to sometimes find 213, often at 210 or 207 with 100,000 points
-# For faster results, could use only selections that have at least 6 entries (least required to get to max weight)
-# Also selections that have less than 13 entries (most required under max weight)
-
 
 
 # Task 2:
@@ -81,134 +77,103 @@ for i in range(3):
 # To use the GA module, you simply need to have the two Python files 
 # in the same folder.  You DO NOT need to use pip.  
 
-# Template Code:  genentic_alg.py,  Download genentic_alg.py,GA.py
 
+values = [23, 21, 8, 1, 3, 7, 18, 19, 17, 15, 24, 22, 6, 28, 4, 2, 27, 20, 5, 10]
+weights = [7, 2, 6, 9, 1, 5, 6, 1, 3, 4, 7, 9, 3, 7, 3, 4, 5, 1, 5, 4]
+max_weight = 45
 
+# Parameters
+generations = 50
+pop_size = 200
 
 import GA
-# Step 1 - Initialize Population
-myPop = GA.Population(populationSize = 20, numGenes = 20)
+
+# Initialize Population
+myPop = GA.Population(populationSize=pop_size, numGenes=20)
 for c in myPop.members:
     GA.myFitnessFunction(c)
 
+best_fitness_history = []
+avg_fitness_history = []
 
-# Step 2 - Selection
-# Supose we selected Chrom 1 and 5
+# Run Genetic Algorithm
+top_ratio = 0.1
 
+for gen in range(generations):
+    # Evaluate fitness
+    for c in myPop.members:
+        GA.myFitnessFunction(c)
 
-# Step 3 - Crossover and Mutate
-# Crossover will generate new Chromosomes and will look like:
-# newChrom = myPop[1] + myPop[5]
+    # Track stats
+    fitness_scores = [c.fitness for c in myPop.members]
+    best_fitness_history.append(max(fitness_scores))
+    avg_fitness_history.append(sum(fitness_scores) / len(fitness_scores))
 
+    # Selection
+    parent_pool = myPop.selection(ratio=top_ratio)
 
-# Mutation will look like this, but only a small percent of the
-# population Chromosomes will be mutated:
-# newChrom.mutate()
+    # Generate new population
+    # new_members = []
+    # new_members = GA.Population(populationSize=1, numGenes=20)
+    new_members = parent_pool
+    while len(new_members) < 10 * pop_size:
+        p1 = random.choice(parent_pool)
+        p2 = random.choice(parent_pool)
+        child = p1 + p2
+        if random.random() < 0.01:
+            child.mutate()
+        GA.myFitnessFunction(child)
+        new_members.append(child)
 
-
-# Step 4 - repeat
-
-
-
-
-# Fitness function
-def knapsack_fitness(Chromosome):
-    gene = GA.Chromosome.__init__()  # array of 0s and 1s
-    total_value = np.dot(gene, values)
-    total_weight = np.dot(gene, weights)
-    
-    # Penalize overweight
-    if total_weight > weight_limit:
-        fitness = 0
-    else:
-        fitness = total_value
-    
-    Chromosome.fitness = fitness
-    return fitness
-
-
-
-def myFitnessFunction(chrom):
-    values = [23, 21, 8, 1, 3, 7, 18, 19, 17, 15, 24, 22, 6, 28, 4, 2, 27, 20, 5, 10]
-    weights = [7, 2, 6, 9, 1, 5, 6, 1, 3, 4, 7, 9, 3, 7, 3, 4, 5, 1, 5, 4]
-    weight_limit = 45
-
-    gene = chrom.getBinary()
-    total_weight = sum([g * w for g, w in zip(gene, weights)])
-    total_value = sum([g * v for g, v in zip(gene, values)])
-
-    if total_weight > weight_limit:
-        chrom.fitness = 0  # Penalize
-    else:
-        chrom.fitness = total_value
-
-
-# GA settings
-population_size = 20
-generations = 50
-mutation_rate = 0.1  # 10% of children mutate
-
-
-# Initialize population
-myPop = GA.Population(population_size, numGenes=20)
-for chrom in myPop.members:
-    knapsack_fitness(chrom)
-
-
-# Track fitness over time
-avg_fitness_list = []
-best_fitness_list = []
-
-# Run GA
-for g in range(generations):
-    new_members = []
-
-    # Record fitness stats
-    fitnesses = [c.fitness for c in myPop.members]
-    avg_fitness_list.append(np.mean(fitnesses))
-    best_fitness_list.append(np.max(fitnesses))
-
-    # Create new generation
-    for _ in range(population_size // 2):
-        p1, p2 = myPop.selectParents()
-        child1 = p1 + p2
-        child2 = p2 + p1
-        
-        # Mutate with small chance
-        if np.random.rand() < mutation_rate:
-            child1.mutate()
-        if np.random.rand() < mutation_rate:
-            child2.mutate()
-        
-        # Evaluate fitness
-        knapsack_fitness(child1)
-        knapsack_fitness(child2)
-
-        new_members.extend([child1, child2])
-
-    # Replace population
     myPop.members = new_members
+    myPop.members = myPop.selection(ratio=.1) # changing this ratio has a large effect of the average fitness
 
-# Final best solution
-best = max(myPop.members, key=lambda c: c.fitness)
-print("Best GA solution:")
-print("Fitness:", best.fitness)
-print("Selected items:", best.getBinary())
-print("Total weight:", np.dot(best.getBinary(), weights))
 
-# Plot fitness evolution
-plt.plot(avg_fitness_list, label="Average Fitness")
-plt.plot(best_fitness_list, label="Best Fitness")
-plt.xlabel("Generation")
-plt.ylabel("Fitness")
-plt.title("GA Fitness Evolution for Knapsack")
+print("Top GA Solution")
+
+print(f"Solution 1: Value = {best_fitness_history[-1]}")
+
+# Plot fitness over generations
+plt.plot(best_fitness_history, label='Best Fitness')
+plt.plot(avg_fitness_history, label='Average Fitness')
+plt.xlabel('Generation')
+plt.ylabel('Fitness')
+plt.title('GA: Best and Average Fitness Over Generations')
 plt.legend()
 plt.grid(True)
-plt.tight_layout()
+# plt.tight_layout()
 plt.show()
 
+# Discussion:
+# The GA always increases its best fitness, but seems to plateau its average
+# fitness depending on how many children there are. This suggests there 
+# is something just a tiny bit off, but still finds good solutions in general
+# For more generations, the GA can continue to get a little closer but still
+# plateaus for long periods of time waiting to get lucky with better children
 
 
+
+# Task 3
+# Compare and contrast the two solution methods, MBFA and GA.
+# Comment on how each method converges on a solution versus number 
+# of trials/generations.  Also, provide your thoughts on why one 
+# method may work better than the other for solving this problem.
+
+
+# MBFA takes 100000 interations to converge to a value somewhere from 207-215 (rare)
+# Seems to sometimes find 213, often at 210 or 207 with 100,000 points
+# For faster results, could use only selections that have at least 6 entries (least required to get to max weight), 
+# or selections that have less than 13 entries (most required under max weight)
+
+# GA uses 200 generations with 100 population to reach similar numbers
+# There is still some variance with what number it reaches, but the average
+# fitness values are much higher than the averge for the MBFA
+
+# Generally, GA gets a better solution than MBFA. MBFA really only works consistently
+# once you reach a critical number or trials, which is closer to a million 
+# than one hundred thousand. The MBFA will usaually need to get lucky, whereas 
+# the GA consistently gets better. The GA will plateau at a certain point based 
+# on the input parameters, but can be made to reach 215
 
 
 
