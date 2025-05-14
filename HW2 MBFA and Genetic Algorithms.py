@@ -79,7 +79,7 @@ max_weight = 45
 
 # Parameters
 generations = 50
-pop_size = 200
+pop_size = 50
 
 import GA
 
@@ -115,7 +115,7 @@ for gen in range(generations):
         p1 = random.choice(parent_pool)
         p2 = random.choice(parent_pool)
         child = p1 + p2
-        if random.random() < 0.01:
+        if random.random() < .01:
             child.mutate()
         GA.myFitnessFunction(child)
         new_members.append(child)

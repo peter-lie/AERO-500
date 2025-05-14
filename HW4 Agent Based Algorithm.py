@@ -1,47 +1,52 @@
 # Peter Lie
 # AERO 500 / 470
 
-# Homework 4: Agent Based Algorithms
+# Homework 4: Agent - Based Algorithms
+# VPython Simulation
 
 # Clear terminal
 import os
 clear = lambda: os.system('clear')
 clear()
 
-# Imports
+
 from vpython import *
-import random
 import numpy as np
+import random
 
-# Simulation parameters
+# Parameters
 N = 30
-dt = 0.5
-gamma = 0.05
-dnorm = 1.5
-wing_offset = 0.5
-back_offset = 1.0
+leader_speed = 0.1
+follower_gain = 0.1
+near_field_dist = 1.5
+wing_offset = 0.8
+back_offset = 1.2
+leader_back_offset = 0.6  # tighter spacing behind the global leader
+leader_wing_offset = 0.6  # equalize left/right spacing for global leader
+dt = 0.2
 
-# Initialize birds and velocities
+# Initialize birds
 birds = []
 velocities = []
-for _ in range(N):
-    bird = sphere(pos=vector(random.uniform(-5, 5),
-                             random.uniform(-5, 5),
-                             random.uniform(0, 2)),
-                  radius=0.2,
-                  color=color.white)
-    birds.append(bird)
+
+# Followers clustered behind the leader
+for _ in range(N - 1):
+    b = sphere(pos=vector(random.uniform(-2, 2),
+                         random.uniform(-2, 1),
+                         random.uniform(-0.2, 0.2)),
+               radius=0.2, color=color.white)
+    birds.append(b)
     velocities.append(vector(0, 0, 0))
 
-# Fix primary leader at start
-primary_leader_index = max(range(N), key=lambda i: birds[i].pos.y)
-primary_leader = birds[primary_leader_index]
-primary_leader.color = color.cyan
+# Leader at the front-center
+leader = sphere(pos=vector(0, 2.0, 0), radius=0.2, color=color.cyan)
+birds.insert(0, leader)
+velocities.insert(0, vector(0, 0, 0))
 
-# FIXED: Capture leader's initial X at side-assignment time
-fixed_leader_x = primary_leader.pos.x
+primary_leader_index = 0
 
-# Assign fixed side for each bird at t=0
+# Assign each bird a permanent left/right side
+fixed_leader_x = birds[primary_leader_index].pos.x
 sides = []
 for i in range(N):
     if i == primary_leader_index:
@@ -52,43 +57,72 @@ for i in range(N):
             side = random.choice([-1, 1])
         sides.append(side)
 
-# Choose nearest leader in front (greater y)
+# Choose the closest same-side bird ahead, or global leader if none
+
 def choose_leader(i):
     self_pos = birds[i].pos
+    self_side = sides[i]
     min_dist = float('inf')
     leader = None
     for j in range(N):
+        if j == i:
+            continue
         candidate = birds[j]
         if candidate.pos.y > self_pos.y:
-            dist = mag(candidate.pos - self_pos)
-            if dist < min_dist:
-                min_dist = dist
-                leader = candidate
+            if sides[j] == self_side:
+                dist = mag(candidate.pos - self_pos)
+                if dist < min_dist:
+                    min_dist = dist
+                    leader = candidate
+
+    # If no same-side leader ahead, follow the global leader
+    if leader is None:
+        leader = birds[primary_leader_index]
     return leader
 
-# Compute draft position
-def compute_draft_position(leader_pos, side):
-    return leader_pos + vector(side * wing_offset, -back_offset, 0.1)
+# Compute draft target position
+def compute_draft_position(leader_pos, side, is_global_leader=False):
+    offset = leader_back_offset if is_global_leader else back_offset
+    lateral = leader_wing_offset if is_global_leader else wing_offset
+    return leader_pos + vector(side * lateral, -offset, 0.1)
 
 # Simulation loop
 while True:
     rate(30)
+
+    # Compute average follower Y
+    follower_y = [bird.pos.y for i, bird in enumerate(birds) if i != primary_leader_index]
+    avg_follower_y = sum(follower_y) / len(follower_y)
+
+    # Compute max follower y to keep leader ahead
+    max_follower_y = max(follower_y)
+
     for i in range(N):
         bird = birds[i]
+
         if i == primary_leader_index:
-            velocities[i] = vector(0, 0.1, 0)
-        else:
-            leader = choose_leader(i)
-            if leader is None:
+            # Leader slows down or stops if anyone catches up
+            dy = bird.pos.y - max_follower_y
+            if dy < 0.5:
+                velocities[i] = vector(0, 0.0, 0)
+            elif dy < 1.5:
                 velocities[i] = vector(0, 0.05, 0)
             else:
-                dist = mag(leader.pos - bird.pos)
-                if dist > dnorm:
-                    velocities[i] = norm(leader.pos - bird.pos) * 0.2
+                velocities[i] = vector(0, leader_speed, 0)
+        else:
+            leader_bird = choose_leader(i)
+            if leader_bird is None:
+                velocities[i] = vector(0, 0.05, 0)
+            else:
+                dist = mag(leader_bird.pos - bird.pos)
+                if dist > near_field_dist:
+                    direction = norm(leader_bird.pos - bird.pos)
+                    velocities[i] = direction * 0.2
                 else:
                     side = sides[i]
-                    draft_pos = compute_draft_position(leader.pos, side)
-                    delta_s = draft_pos - bird.pos
-                    velocities[i] = gamma * delta_s
+                    is_global = (leader_bird == birds[primary_leader_index])
+                    target = compute_draft_position(leader_bird.pos, side, is_global_leader=is_global)
+                    delta = target - bird.pos
+                    velocities[i] = follower_gain * delta
 
         bird.pos += velocities[i] * dt
