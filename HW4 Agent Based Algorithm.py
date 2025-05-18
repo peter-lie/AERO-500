@@ -9,120 +9,130 @@ import os
 clear = lambda: os.system('clear')
 clear()
 
-
 from vpython import *
 import numpy as np
-import random
 
 # Parameters
-N = 30
-leader_speed = 0.1
-follower_gain = 0.1
-near_field_dist = 1.5
-wing_offset = 0.8
-back_offset = 1.2
-leader_back_offset = 0.6  # tighter spacing behind the global leader
-leader_wing_offset = 0.6  # equalize left/right spacing for global leader
-dt = 0.2
+N = 45
+a = 1
+gamma = 0.05
+xOffset, yOffset = 0.05, 0.05
+Dnom = np.sqrt(2*xOffset**2 + (xOffset*(1.1 + np.pi/4))**2)
 
-# Initialize birds
-birds = []
-velocities = []
-
-# Followers clustered behind the leader
-for _ in range(N - 1):
-    b = sphere(pos=vector(random.uniform(-2, 2),
-                         random.uniform(-2, 1),
-                         random.uniform(-0.2, 0.2)),
-               radius=0.2, color=color.white)
-    birds.append(b)
-    velocities.append(vector(0, 0, 0))
-
-# Leader at the front-center
-leader = sphere(pos=vector(0, 2.0, 0), radius=0.2, color=color.cyan)
-birds.insert(0, leader)
-velocities.insert(0, vector(0, 0, 0))
-
-primary_leader_index = 0
-
-# Assign each bird a permanent left/right side
-fixed_leader_x = birds[primary_leader_index].pos.x
-sides = []
+# Randomly generate 2D position
+x_bar_k = np.zeros((2, N))
+sides = np.zeros(N)
 for i in range(N):
-    if i == primary_leader_index:
-        sides.append(0)
+    if i == 0:
+        x_k = 0
+        y_k = 10
+        side = 0
     else:
-        side = np.sign(birds[i].pos.x - fixed_leader_x)
-        if side == 0:
-            side = random.choice([-1, 1])
-        sides.append(side)
+        # These ensure even split - same amount of agents on either side
+        # side = -1 if i % 2 == 0 else 1
+        # x_k = side * np.random.uniform(0, 10) # even V
+        x_k = np.random.uniform(-10, 10) # uneven V
+        side = -1 if x_k < 0 else 1 # keep on same side from primary leader
+        y_k = np.random.uniform(-10, 10)
+    x_bar_k[:, i] = [x_k, y_k]
+    sides[i] = side
 
-# Choose the closest same-side bird ahead, or global leader if none
+# Sort by y (descending) and identify leader as highest y value
+sort_indices = np.argsort(-x_bar_k[1, :])
+x_bar_k = x_bar_k[:, sort_indices]
+sides = sides[sort_indices.astype(int)]
+front_leader_ixOffset = 0
 
-def choose_leader(i):
-    self_pos = birds[i].pos
-    self_side = sides[i]
-    min_dist = float('inf')
-    leader = None
+# Rendering Setup
+scene = canvas(title="Goose V-Formation", width=1000, height=600)
+scene.range = 30
+bodies = []
+for i in range(N):
+    color_i = color.blue if i == front_leader_ixOffset else color.white
+    boyOffset = sphere(pos=vector(*x_bar_k[:, i], 0), radius=0.3, make_trail=True, color=color_i)
+    bodies.append(boyOffset)
+
+# Functions
+def update_pos(i, x_bar, leader_pos, front_leader_pos, side):
+    xi = x_bar[:, i]
+    delta_r = leader_pos - xi
+    dist = np.linalg.norm(delta_r)
+
+    # far field
+    if dist > Dnom:
+        delta = gamma * delta_r
+        F = np.zeros(4)
+        if side == -1:
+            F[0] = 1  # move left
+        elif side == 1:
+            F[1] = 1  # move right
+        else:
+            F[np.random.choice([0, 1])] = 1
+
+        F[2] = 1  # always move back
+        if np.isclose(xi[0], leader_pos[0], atol=0.5) or np.isclose(xi[1], leader_pos[1], atol=0.5):
+            F[3] = 1
+
+        B = np.array([
+            [-xOffset if F[0] else 0, xOffset if F[1] else 0, 0, 0],
+            [0, 0, -yOffset if F[2] else 0, -yOffset if F[3] else 0]
+        ])
+        delta = delta + B @ F
+
+    # near field
+    else:
+        if side != 0:
+            offset = np.array([side * 0.75 * a, 0.75 * a])
+        else:
+            offset = np.array([0, 0.75 * a])
+        delta = gamma * (delta_r - offset)
+
+    return delta
+
+
+def get_relative_leader(i, x_bar, side):
+    xi = x_bar[:, i]
+    min_dist = np.inf
+    rel_leader = None
     for j in range(N):
         if j == i:
             continue
-        candidate = birds[j]
-        if candidate.pos.y > self_pos.y:
-            if sides[j] == self_side:
-                dist = mag(candidate.pos - self_pos)
+        xj = x_bar[:, j]
+        if xj[1] > xi[1]:
+            # If front leader, allow it
+            if j == front_leader_ixOffset:
+                dist = np.linalg.norm(xj - xi)
                 if dist < min_dist:
                     min_dist = dist
-                    leader = candidate
+                    rel_leader = j
+            elif np.sign(xj[0] - x_bar_k[0, front_leader_ixOffset]) == side:
+                dist = np.linalg.norm(xj - xi)
+                if dist < min_dist:
+                    min_dist = dist
+                    rel_leader = j
+    return rel_leader
 
-    # If no same-side leader ahead, follow the global leader
-    if leader is None:
-        leader = birds[primary_leader_index]
-    return leader
-
-# Compute draft target position
-def compute_draft_position(leader_pos, side, is_global_leader=False):
-    offset = leader_back_offset if is_global_leader else back_offset
-    lateral = leader_wing_offset if is_global_leader else wing_offset
-    return leader_pos + vector(side * lateral, -offset, 0.1)
-
-# Simulation loop
+# Simulation Loop
 while True:
     rate(30)
+    front_leader_pos = x_bar_k[:, front_leader_ixOffset]
+    for i in range(N):
+        if i == front_leader_ixOffset:
+            continue
 
-    # Compute average follower Y
-    follower_y = [bird.pos.y for i, bird in enumerate(birds) if i != primary_leader_index]
-    avg_follower_y = sum(follower_y) / len(follower_y)
-
-    # Compute max follower y to keep leader ahead
-    max_follower_y = max(follower_y)
+        rel_leader_ixOffset = get_relative_leader(i, x_bar_k, sides[i])
+        if rel_leader_ixOffset is None:
+            continue
+        leader_pos = x_bar_k[:, rel_leader_ixOffset].copy()
+        update = update_pos(i, x_bar_k, leader_pos, front_leader_pos, sides[i])
+        x_bar_k[:, i] += update
 
     for i in range(N):
-        bird = birds[i]
+        bodies[i].pos = vector(*x_bar_k[:, i], 0)
 
-        if i == primary_leader_index:
-            # Leader slows down or stops if anyone catches up
-            dy = bird.pos.y - max_follower_y
-            if dy < 0.5:
-                velocities[i] = vector(0, 0.0, 0)
-            elif dy < 1.5:
-                velocities[i] = vector(0, 0.05, 0)
-            else:
-                velocities[i] = vector(0, leader_speed, 0)
-        else:
-            leader_bird = choose_leader(i)
-            if leader_bird is None:
-                velocities[i] = vector(0, 0.05, 0)
-            else:
-                dist = mag(leader_bird.pos - bird.pos)
-                if dist > near_field_dist:
-                    direction = norm(leader_bird.pos - bird.pos)
-                    velocities[i] = direction * 0.2
-                else:
-                    side = sides[i]
-                    is_global = (leader_bird == birds[primary_leader_index])
-                    target = compute_draft_position(leader_bird.pos, side, is_global_leader=is_global)
-                    delta = target - bird.pos
-                    velocities[i] = follower_gain * delta
+# V's are uneven because birds only look at local leaders - 
+# meaning that it depends on where birds are initially with 
+# respect to the global leader
 
-        bird.pos += velocities[i] * dt
+# V's even if birds are evenly split across
+
