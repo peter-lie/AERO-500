@@ -1,7 +1,7 @@
 # Peter Lie
 # AERO 500 / 470
 
-# ICA 4/5
+# ICA 7
 
 # Clear terminal
 import os
