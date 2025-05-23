@@ -53,3 +53,5 @@ class Simulation:
 
     def generate_service(self):
         return np.random.exponential(1.0 / 4.0)  # Service rate: 4 per unit time
+    
+    
