@@ -49,7 +49,7 @@ scene.range = 30
 bodies = []
 for i in range(N):
     color_i = color.blue if i == front_leader_ixOffset else color.white
-    boyOffset = sphere(pos=vector(*x_bar_k[:, i], 0), radius=0.3, make_trail=True, color=color_i)
+    boyOffset = sphere(pos=vector(*x_bar_k[:, i], 0), radius=0.3, make_trail=True, color=color_i, retain=100)
     bodies.append(boyOffset)
 
 # Functions
@@ -114,7 +114,7 @@ def get_relative_leader(i, x_bar, side):
 
 # Simulation Loop
 while True:
-    rate(30)
+    rate(40)
     front_leader_pos = x_bar_k[:, front_leader_ixOffset]
     for i in range(N):
         if i == front_leader_ixOffset:
